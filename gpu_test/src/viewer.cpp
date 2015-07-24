@@ -66,7 +66,6 @@ Timer timer;
 float fps;
 float last_draw_time;
 
-GLCanvas canvas;
 void CheckGLError(int id) {
   GLenum error = glGetError();
   if (error != GL_NO_ERROR) {
@@ -76,6 +75,7 @@ void CheckGLError(int id) {
 
 
 ///////////////////////////////////////////////////////////////////////////////
+GLCanvas* canvas;
 void StartWindow() {
   // register exit callback
   atexit(exitCB);
@@ -88,20 +88,46 @@ void StartWindow() {
   initGL();
   CheckGLError(7);
 
-  canvas.AddStage(2, 2, "shaders/basic.frag");
-  canvas.AddStage(2, 2, "shaders/glow.frag");
-  canvas.Init();
+
+  canvas = new GLCanvas();
+
+  //canvas.AddStage(2, 2, "shaders/basic.frag");
+  //canvas.AddStage(2, 2, "shaders/glow.frag");
+  //canvas.Init();
 
   CheckGLError(8);
   uint8_t texture[] = {
     // R, G, B
-    0, 0, 255, 255,   255, 0, 0, 255,
-    255, 0, 0, 255,   0, 0, 255, 255
+    0, 0, 255, 0,   255, 0, 0, 255,
+    255, 0, 0, 255,   0, 0, 255, 0 
   };
-  canvas.SetData(texture);
+  //canvas.SetData(texture);
   CheckGLError(9);
 
-  // start timer, the elapsed time will be used for updateVertices()
+  // Create the immediate sources to the pipeline
+  PipelineSource diffuse_texture("diffuse_texture", 2, 2);
+  std::vector<PipelineSource*> sources;
+  sources.push_back(&diffuse_texture);
+
+  // Create the intermediate stages
+  int upscale = 500;
+  PipelineStage blur_x("blur_x", upscale, upscale, "shaders/blur_x.frag");
+  PipelineStage blur_y("blur_y", upscale, upscale, "shaders/blur_y.frag");
+  PipelineStage glow("glow", upscale, upscale, "shaders/glow.frag");
+  //PipelineStage glow("glow", upscale, upscale, "shaders/autoglow.frag");
+  // These need to be added in render order
+  // (there isn't any smart dependency checking to determine that on the fly)
+  std::vector<PipelineStage*> stages;
+  stages.push_back(&blur_x);
+  stages.push_back(&blur_y);
+  stages.push_back(&glow);
+
+  // Link
+  canvas->SetStages(sources, stages);
+
+  // Set the initial data
+  diffuse_texture.SetData(texture);
+
   timer.start();
   glutMainLoop();
 }
@@ -154,6 +180,8 @@ void initGL() {
   GLenum glewError = glewInit();
   if( glewError != GLEW_OK ) {
     printf( "Error initializing GLEW! %s\n", glewGetErrorString( glewError ) );
+  } else {
+    printf("All good I guess..\n");
   }
 
   //glPixelStorei(GL_UNPACK_ALIGNMENT, 4);      // 4-byte pixel alignment
@@ -171,15 +199,16 @@ void displayCB() {
   // clear buffer
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-  canvas.Render(0, screenWidth, screenHeight);
-  CheckGLError(12);
+  canvas->Render(0, screenWidth, screenHeight);
 
   // draw info messages
   float current_time = timer.getElapsedTimeInMicroSec();
   fps = 1000000.0 / (current_time - last_draw_time);
+  //printf("%f fps\n", fps);
   last_draw_time = current_time;
 
   glutSwapBuffers();
+  CheckGLError(10);
 }
 
 void reshapeCB(int width, int height) {
